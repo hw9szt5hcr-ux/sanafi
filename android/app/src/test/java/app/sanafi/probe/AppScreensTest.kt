@@ -9,6 +9,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
+import app.sanafi.probe.core.ErrorHints
 import app.sanafi.probe.core.ProbeId
 import app.sanafi.probe.core.ProbeResult
 import app.sanafi.probe.core.Status
@@ -155,6 +156,18 @@ class AppScreensTest {
         assertEquals(Status.FAIL, result.status)
         assertTrue(result.detail.contains("الصلاحية"))
         assertTrue(statuses.isEmpty())
+    }
+
+    @Test
+    fun `a call whose backend cannot be reached is saved as a network failure, not a crash`() = runBlocking {
+        shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        Settings(app).apply { backendUrl = "https://sanafi-backend.invalid"; deviceSecret = "s" }
+        val statuses = mutableListOf<String>()
+        val result = CallProbe(app).run("mul_abdullah", CallProbe.Mode.LATENCY) { statuses += it }
+        assertEquals(Status.FAIL, result.status)
+        assertEquals(ErrorHints.forCode("network"), result.detail)
+        assertEquals(listOf("يطلب مكالمة من الخادم…"), statuses)
+        assertEquals(result, ProbeStore(app).get(ProbeId.CALL_LATENCY))
     }
 
     @Test
