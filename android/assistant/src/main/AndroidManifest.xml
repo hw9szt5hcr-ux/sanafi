@@ -34,6 +34,7 @@
     </queries>
 
     <application
+        android:name=".SanafiApp"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -72,5 +73,17 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ui.CallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask" />
+
+        <!-- The live call. Started from the visible screen that received the button press. -->
+        <service
+            android:name=".call.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>
