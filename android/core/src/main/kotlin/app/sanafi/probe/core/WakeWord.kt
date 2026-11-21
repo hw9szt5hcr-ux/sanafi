@@ -118,8 +118,13 @@ class WakeCounter(private val threshold: Float = 0.5f, private val refractoryFra
     }
 }
 
-/** CALLING: the owner says the wake word five times over music. QUIET: music only, nobody calls. */
-enum class WakeMode { CALLING, QUIET }
+/**
+ * CALLING: the owner says the wake word five times over music. QUIET: music only, nobody calls.
+ * NO_MUSIC: the five calls with the music off, to tell a masked voice from a word the model
+ * does not recognise. FILTERED: the five calls over music, recorded through the device's echo
+ * canceller and noise suppressor.
+ */
+enum class WakeMode { CALLING, QUIET, NO_MUSIC, FILTERED }
 
 data class WakeRun(
     val mode: WakeMode,
@@ -127,4 +132,38 @@ data class WakeRun(
     val maxScore: Double,
     val avgMsPerFrame: Double,
     val listenedSeconds: Double,
+    val levelDbfs: Double,
+    val loudDbfs: Double,
+    /** Only for a FILTERED run: whether the device really switched its echo canceller on. */
+    val echoCancellerActive: Boolean? = null,
 )
+
+/**
+ * How loud a run was: [averageDbfs] over everything heard, and [loudDbfs], the level of the
+ * loudest twentieth of the frames, which follows speech in an otherwise quiet run.
+ */
+class LevelMeter {
+    private var sumSquares = 0.0
+    private var samples = 0L
+    private val framePowers = ArrayList<Double>()
+
+    fun add(frame: ShortArray) {
+        if (frame.isEmpty()) return
+        var sum = 0.0
+        for (s in frame) sum += s.toDouble() * s.toDouble()
+        sumSquares += sum
+        samples += frame.size
+        framePowers += sum / frame.size
+    }
+
+    val averageDbfs: Double get() = if (samples == 0L) Double.NEGATIVE_INFINITY else dbfs(sumSquares / samples)
+
+    val loudDbfs: Double
+        get() {
+            if (framePowers.isEmpty()) return Double.NEGATIVE_INFINITY
+            val sorted = framePowers.sorted()
+            return dbfs(sorted[(kotlin.math.ceil(sorted.size * 0.95).toInt() - 1).coerceIn(0, sorted.size - 1)])
+        }
+
+    private fun dbfs(power: Double): Double = if (power <= 0.0) Double.NEGATIVE_INFINITY else 10.0 * kotlin.math.log10(power / (32768.0 * 32768.0))
+}

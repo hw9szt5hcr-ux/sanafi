@@ -67,7 +67,7 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
         }
 
         rows.getValue(ProbeId.ASSIST_BUTTON).apply {
-            note("اختر «اختبار سنافي» كمساعد، ثم اضغط زر الدركسون ضغطة مطوّلة.")
+            note("اضغط زر الدركسون ضغطة مطوّلة. إذا طلعت قائمة «فتح باستخدام» اختر «اختبار سنافي» ثم «دائماً».")
             button("اختيار المساعد") { openAssistantSettings() }
         }
 
@@ -93,9 +93,11 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
         }
 
         rows.getValue(ProbeId.WAKE_OVER_MUSIC).apply {
-            note("شغّل أغنية بالصوت اللي تسمعه عادة. «اختبار النداء»: قل «أليكسا» ٥ مرات وبين كل مرة ٥ ثواني، وتسمع صفارة كل ما يلقطها. «بدون نداء»: خل الأغنية شغالة ولا تتكلم.")
+            note("في كل اختبار نداء قل «أليكسا» ٥ مرات وبين كل مرة ٥ ثواني؛ تسمع صفارة كل ما يلقطها. الأغنية تكون شغالة بصوتها المعتاد، إلا في «نداء بدون أغنية». في «بدون نداء» خل الأغنية شغالة ولا تتكلم.")
             button("اختبار النداء (٦٠ ثانية)") { startWake(WakeMode.CALLING) }
+            button("نداء مع عزل الصدى (٦٠ ثانية)") { startWake(WakeMode.FILTERED) }
             button("بدون نداء (٦٠ ثانية)") { startWake(WakeMode.QUIET) }
+            button("نداء بدون أغنية (٦٠ ثانية)") { startWake(WakeMode.NO_MUSIC) }
         }
 
         rows.getValue(ProbeId.TELEPHONY).apply {
@@ -117,7 +119,7 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
     private fun startWake(mode: WakeMode) {
         activity.withPermission(Manifest.permission.RECORD_AUDIO) {
             activity.startForegroundService(Intent(activity, WakeService::class.java).putExtra(WakeService.EXTRA_MODE, mode.name))
-            val text = if (mode == WakeMode.CALLING) "يسمع دقيقة… قل «أليكسا» ٥ مرات." else "يسمع دقيقة… لا تتكلم."
+            val text = if (mode == WakeMode.QUIET) "يسمع دقيقة… لا تتكلم." else "يسمع دقيقة… قل «أليكسا» ٥ مرات."
             activity.showProgress(ProbeId.WAKE_OVER_MUSIC, text)
             activity.window.decorView.postDelayed({ refresh() }, (WakeListener.LISTEN_SECONDS + 3) * 1000L)
         }

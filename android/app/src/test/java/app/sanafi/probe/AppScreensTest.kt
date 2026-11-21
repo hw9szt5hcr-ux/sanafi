@@ -226,8 +226,23 @@ class AppScreensTest {
         val calling = shadowOf(app).nextStartedService
         assertEquals(WakeService::class.java.name, calling.component!!.className)
         assertEquals(WakeMode.CALLING.name, calling.getStringExtra(WakeService.EXTRA_MODE))
-        button(activity.window.decorView, "بدون نداء (٦٠ ثانية)").performClick()
-        assertEquals(WakeMode.QUIET.name, shadowOf(app).nextStartedService.getStringExtra(WakeService.EXTRA_MODE))
+        val labels = mapOf(
+            "بدون نداء (٦٠ ثانية)" to WakeMode.QUIET,
+            "نداء بدون أغنية (٦٠ ثانية)" to WakeMode.NO_MUSIC,
+            "نداء مع عزل الصدى (٦٠ ثانية)" to WakeMode.FILTERED,
+        )
+        for ((label, mode) in labels) {
+            button(activity.window.decorView, label).performClick()
+            assertEquals(mode.name, shadowOf(app).nextStartedService.getStringExtra(WakeService.EXTRA_MODE))
+        }
+    }
+
+    @Test
+    fun `voice search intents a steering wheel key can raise are offered to the assist screen`() {
+        for (action in listOf("android.speech.action.WEB_SEARCH", "android.intent.action.VOICE_ASSIST", Intent.ACTION_VOICE_COMMAND, Intent.ACTION_ASSIST)) {
+            val handlers = app.packageManager.queryIntentActivities(Intent(action), 0).map { it.activityInfo.name }
+            assertTrue("$action not handled: $handlers", handlers.contains(AssistActivity::class.java.name))
+        }
     }
 
     @Test

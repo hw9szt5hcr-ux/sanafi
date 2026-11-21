@@ -13,7 +13,10 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.ToneGenerator
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.os.IBinder
+import app.sanafi.probe.core.LevelMeter
 import app.sanafi.probe.core.ProbeId
 import app.sanafi.probe.core.ProbeReducer
 import app.sanafi.probe.core.ProbeResult
@@ -48,8 +51,10 @@ class WakeListener(context: Context) {
         }
         val rate = WakeWordDetector.SAMPLE_RATE
         val minBuffer = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        // The filtered run records the way a phone call does, so the device applies its echo canceller.
+        val source = if (mode == WakeMode.FILTERED) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION
         val recorder = try {
-            AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 0) * 4 + rate)
+            AudioRecord(source, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 0) * 4 + rate)
         } catch (_: Exception) {
             null
         }
@@ -59,7 +64,11 @@ class WakeListener(context: Context) {
             return save(true, null, "ما انفتح الميكروفون")
         }
 
+        val echoCanceller = if (mode == WakeMode.FILTERED) enable { AcousticEchoCanceler.create(recorder.audioSessionId) } else null
+        val noiseSuppressor = if (mode == WakeMode.FILTERED) enable { NoiseSuppressor.create(recorder.audioSessionId) } else null
+        val echoActive = if (mode == WakeMode.FILTERED) echoCanceller?.enabled == true else null
         val counter = WakeCounter()
+        val meter = LevelMeter()
         val frame = ShortArray(WakeWordDetector.FRAME_SAMPLES)
         val totalFrames = seconds * rate / frame.size
         var frames = 0
@@ -70,6 +79,9 @@ class WakeListener(context: Context) {
             maxScore = counter.maxScore.toDouble(),
             avgMsPerFrame = if (frames == 0) 0.0 else cpuNanos / 1e6 / frames,
             listenedSeconds = frames * frame.size / rate.toDouble(),
+            levelDbfs = meter.averageDbfs,
+            loudDbfs = meter.loudDbfs,
+            echoCancellerActive = echoActive,
         )
         try {
             recorder.startRecording()
@@ -81,6 +93,7 @@ class WakeListener(context: Context) {
                     filled += read
                 }
                 if (filled < frame.size) break
+                meter.add(frame)
                 val started = System.nanoTime()
                 val scores = detector.feed(frame)
                 cpuNanos += System.nanoTime() - started
@@ -98,10 +111,19 @@ class WakeListener(context: Context) {
             // Keep what was heard so far; the result is judged by its counts.
         } finally {
             try { recorder.stop() } catch (_: Exception) {}
+            try { echoCanceller?.release() } catch (_: Exception) {}
+            try { noiseSuppressor?.release() } catch (_: Exception) {}
             recorder.release()
             detector.close()
         }
         return save(true, runSoFar(), null)
+    }
+
+    /** Creates an audio effect and switches it on; null when the device does not offer it. */
+    private fun <T : android.media.audiofx.AudioEffect> enable(create: () -> T?): T? = try {
+        create()?.also { it.enabled = true }
+    } catch (_: Exception) {
+        null
     }
 
     private fun asset(name: String): ByteArray = context.assets.open("oww/$name").use { it.readBytes() }

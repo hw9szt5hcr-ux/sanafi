@@ -170,36 +170,57 @@ object ProbeReducer {
     private const val MIN_CALLS_HEARD = 3
 
     /**
-     * The wake word over music. A calling run counts how many of the five calls were heard; a
-     * quiet run counts false alarms. Runs accumulate: the probe passes when at least three calls
-     * were heard and no quiet run raised a false alarm.
+     * The wake word over music. Runs accumulate, each mode under its own numbers: calls over
+     * music (plain and through the echo canceller), calls with the music off, and a quiet run
+     * that counts false alarms. The probe passes when at least three of five calls were heard
+     * over music either way and no quiet run raised a false alarm; the run without music never
+     * decides the verdict, it only tells a masked voice from a word the model does not know.
      */
     fun wake(permissionGranted: Boolean, run: WakeRun?, error: String?, previous: ProbeResult?, nowMs: Long): ProbeResult {
         val before = previous?.takeIf { it.id == ProbeId.WAKE_OVER_MUSIC }?.numbers ?: emptyMap()
         fun result(status: Status, detail: String, numbers: Map<String, Double> = before) = ProbeResult(ProbeId.WAKE_OVER_MUSIC, status, detail, numbers, nowMs)
         if (!permissionGranted) return result(Status.FAIL, "ما انعطت الصلاحية للميكروفون. اسمح بها من إعدادات التطبيق.")
         if (error != null || run == null) return result(Status.FAIL, "ما اشتغل كاشف النداء: ${error ?: "سبب غير معروف"}")
-        val numbers = before + when (run.mode) {
-            WakeMode.CALLING -> mapOf(
-                "detections" to run.detections.toDouble(),
-                "max_score" to run.maxScore,
-                "avg_cpu_ms_per_frame" to run.avgMsPerFrame,
-                "listened_s" to run.listenedSeconds,
-            )
-            WakeMode.QUIET -> mapOf(
-                "false_alarms" to run.detections.toDouble(),
-                "quiet_max_score" to run.maxScore,
-                "quiet_listened_s" to run.listenedSeconds,
-            )
+        val prefix = when (run.mode) {
+            WakeMode.CALLING -> ""
+            WakeMode.QUIET -> "quiet_"
+            WakeMode.NO_MUSIC -> "nomusic_"
+            WakeMode.FILTERED -> "aec_"
         }
-        val heard = numbers["detections"]?.toInt()
+        val numbers = before + buildMap {
+            put(if (run.mode == WakeMode.QUIET) "false_alarms" else "${prefix}detections", run.detections.toDouble())
+            put("${prefix}max_score", run.maxScore)
+            if (run.mode == WakeMode.CALLING) put("avg_cpu_ms_per_frame", run.avgMsPerFrame)
+            put("${prefix}listened_s", run.listenedSeconds)
+            put("${prefix}level_dbfs", run.levelDbfs.coerceAtLeast(SILENCE_FLOOR_DBFS))
+            put("${prefix}loud_dbfs", run.loudDbfs.coerceAtLeast(SILENCE_FLOOR_DBFS))
+            run.echoCancellerActive?.let { put("aec_active", if (it) 1.0 else 0.0) }
+        }
+        val plain = numbers["detections"]?.toInt()
+        val filtered = numbers["aec_detections"]?.toInt()
+        val overMusic = listOfNotNull(plain, filtered).maxOrNull()
+        val withoutMusic = numbers["nomusic_detections"]?.toInt()
         val falseAlarms = numbers["false_alarms"]?.toInt()
+        val withoutMusicNote = withoutMusic?.let { " بدون أغنية سمعه $it من ٥." } ?: ""
         return when {
-            heard == null -> result(Status.NOT_RUN, "بدون نداء: انطلق بالغلط $falseAlarms مرات. باقي «اختبار النداء».", numbers)
-            heard < MIN_CALLS_HEARD -> result(Status.FAIL, "سمع النداء $heard مرات بس (المطلوب $MIN_CALLS_HEARD من ٥ على الأقل).", numbers)
-            falseAlarms != null && falseAlarms > 0 -> result(Status.FAIL, "سمع النداء $heard مرات، لكن انطلق بالغلط $falseAlarms مرات والأغنية شغالة.", numbers)
-            falseAlarms == null -> result(Status.PASS, "سمع النداء $heard مرات والأغنية شغالة. باقي «اختبار بدون نداء».", numbers)
-            else -> result(Status.PASS, "سمع النداء $heard مرات والأغنية شغالة، وما انطلق بالغلط.", numbers)
+            overMusic == null -> result(
+                Status.NOT_RUN,
+                listOfNotNull(
+                    falseAlarms?.let { "بدون نداء: انطلق بالغلط $it مرات." },
+                    withoutMusic?.let { "بدون أغنية: سمع النداء $it من ٥." },
+                    "باقي «اختبار النداء» والأغنية شغالة.",
+                ).joinToString(" "),
+                numbers,
+            )
+            overMusic < MIN_CALLS_HEARD ->
+                result(Status.FAIL, "سمع النداء $overMusic مرات بس والأغنية شغالة (المطلوب $MIN_CALLS_HEARD من ٥ على الأقل).$withoutMusicNote", numbers)
+            falseAlarms != null && falseAlarms > 0 ->
+                result(Status.FAIL, "سمع النداء $overMusic مرات، لكن انطلق بالغلط $falseAlarms مرات والأغنية شغالة.", numbers)
+            else -> {
+                val way = if ((plain ?: 0) < MIN_CALLS_HEARD) " مع عزل الصدى" else ""
+                val alarms = if (falseAlarms == null) " باقي «بدون نداء»." else "، وما انطلق بالغلط."
+                result(Status.PASS, "سمع النداء $overMusic مرات والأغنية شغالة$way$alarms", numbers)
+            }
         }
     }
 

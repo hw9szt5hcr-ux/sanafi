@@ -81,8 +81,11 @@ class WakeCounterTest {
 }
 
 class WakeReducerTest {
-    private fun calling(detections: Int) = WakeRun(WakeMode.CALLING, detections, maxScore = 0.97, avgMsPerFrame = 6.5, listenedSeconds = 60.0)
-    private fun quiet(falseAlarms: Int) = WakeRun(WakeMode.QUIET, falseAlarms, maxScore = 0.2, avgMsPerFrame = 6.0, listenedSeconds = 60.0)
+    private fun run(mode: WakeMode, detections: Int, maxScore: Double = 0.97, level: Double = -40.0, loud: Double = -28.0) =
+        WakeRun(mode, detections, maxScore = maxScore, avgMsPerFrame = 6.5, listenedSeconds = 60.0, levelDbfs = level, loudDbfs = loud)
+
+    private fun calling(detections: Int) = run(WakeMode.CALLING, detections)
+    private fun quiet(falseAlarms: Int) = run(WakeMode.QUIET, falseAlarms, maxScore = 0.2, level = -33.0, loud = -30.0)
 
     @Test
     fun `three of five calls heard over music passes`() {
@@ -138,5 +141,74 @@ class WakeReducerTest {
         val broken = ProbeReducer.wake(true, null, "model missing", null, 5)
         assertEquals(Status.FAIL, broken.status)
         assertTrue(broken.detail.contains("model missing"))
+    }
+
+    @Test
+    fun `every run keeps its sound levels so voice and music can be compared`() {
+        val r = ProbeReducer.wake(true, quiet(0), null, ProbeReducer.wake(true, calling(3), null, null, 5), 6)
+        assertEquals(-40.0, r.numbers.getValue("level_dbfs"), 0.0)
+        assertEquals(-28.0, r.numbers.getValue("loud_dbfs"), 0.0)
+        assertEquals(-33.0, r.numbers.getValue("quiet_level_dbfs"), 0.0)
+        assertEquals(-30.0, r.numbers.getValue("quiet_loud_dbfs"), 0.0)
+    }
+
+    @Test
+    fun `a level of total silence is stored as the floor, not as infinity`() {
+        val r = ProbeReducer.wake(true, run(WakeMode.CALLING, 0, level = Double.NEGATIVE_INFINITY, loud = Double.NEGATIVE_INFINITY), null, null, 5)
+        assertEquals(-120.0, r.numbers.getValue("level_dbfs"), 0.0)
+        assertEquals(r, ProbeCodec.decode(ProbeCodec.encode(r)))
+    }
+
+    @Test
+    fun `calls heard only with echo cancelling pass and say that way worked`() {
+        val plain = ProbeReducer.wake(true, calling(0), null, null, 5)
+        val r = ProbeReducer.wake(true, run(WakeMode.FILTERED, 4).copy(echoCancellerActive = true), null, plain, 6)
+        assertEquals(Status.PASS, r.status)
+        assertEquals(1.0, r.numbers.getValue("aec_active"), 0.0)
+        assertFalse(plain.numbers.containsKey("aec_active"))
+        assertEquals(0.0, r.numbers.getValue("detections"), 0.0)
+        assertEquals(4.0, r.numbers.getValue("aec_detections"), 0.0)
+        assertTrue(r.detail.contains("عزل الصدى"))
+    }
+
+    @Test
+    fun `a run without music never decides the verdict but explains a failure over music`() {
+        val alone = ProbeReducer.wake(true, run(WakeMode.NO_MUSIC, 5), null, null, 5)
+        assertEquals(Status.NOT_RUN, alone.status)
+        assertEquals(5.0, alone.numbers.getValue("nomusic_detections"), 0.0)
+        val r = ProbeReducer.wake(true, calling(0), null, alone, 6)
+        assertEquals(Status.FAIL, r.status)
+        assertTrue(r.detail.contains("بدون أغنية"))
+        assertTrue(r.detail.contains("5"))
+    }
+}
+
+class LevelMeterTest {
+    private fun frame(amplitude: Int, size: Int = 1280) = ShortArray(size) { if (it % 2 == 0) amplitude.toShort() else (-amplitude).toShort() }
+
+    @Test
+    fun `a steady half-scale signal reads about minus six dBFS on both levels`() {
+        val meter = LevelMeter()
+        repeat(10) { meter.add(frame(16384)) }
+        assertEquals(-6.02, meter.averageDbfs, 0.01)
+        assertEquals(-6.02, meter.loudDbfs, 0.01)
+    }
+
+    @Test
+    fun `a few loud frames in a quiet run raise the loud level far above the average`() {
+        val meter = LevelMeter()
+        repeat(90) { meter.add(frame(33)) }
+        repeat(10) { meter.add(frame(3277)) }
+        assertEquals(-20.0, meter.loudDbfs, 0.1)
+        assertTrue(meter.averageDbfs < -29.0 && meter.averageDbfs > -31.0)
+    }
+
+    @Test
+    fun `nothing heard reads as silence`() {
+        val meter = LevelMeter()
+        assertEquals(Double.NEGATIVE_INFINITY, meter.averageDbfs, 0.0)
+        assertEquals(Double.NEGATIVE_INFINITY, meter.loudDbfs, 0.0)
+        meter.add(ShortArray(1280))
+        assertEquals(Double.NEGATIVE_INFINITY, meter.averageDbfs, 0.0)
     }
 }
