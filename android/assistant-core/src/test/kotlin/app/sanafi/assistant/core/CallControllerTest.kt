@@ -67,6 +67,14 @@ class CallControllerTest {
     }
 
     @Test
+    fun `listening again before the agent has said its word does not end the call early`() {
+        assertEquals(
+            listOf(go, go, go, go, go, end("tool_done")),
+            run(Connected(0), AgentState("thinking", 9_000), ToolFinished(After.END_CALL, 10_000), AgentState("listening", 10_100), AgentState("speaking", 10_300), AgentState("listening", 11_000)),
+        )
+    }
+
+    @Test
     fun `if the agent says nothing after such a tool the call still ends four seconds later`() {
         assertEquals(
             listOf(go, go, go, go, end("tool_done")),
