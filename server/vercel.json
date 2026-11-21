@@ -1,0 +1,3 @@
+{
+  "functions": { "api/agent-session.ts": { "maxDuration": 30 } }
+}
