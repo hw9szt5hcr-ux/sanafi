@@ -13,6 +13,7 @@ import app.sanafi.probe.core.ErrorHints
 import app.sanafi.probe.core.ProbeId
 import app.sanafi.probe.core.ProbeResult
 import app.sanafi.probe.core.Status
+import app.sanafi.probe.core.WakeMode
 import app.sanafi.probe.data.ProbeStore
 import app.sanafi.probe.data.Settings
 import app.sanafi.probe.probes.AssistActivity
@@ -23,6 +24,8 @@ import app.sanafi.probe.probes.MicMatrixProbe
 import app.sanafi.probe.probes.MicWatchService
 import app.sanafi.probe.probes.MicWatcher
 import app.sanafi.probe.probes.TelephonyProbe
+import app.sanafi.probe.probes.WakeListener
+import app.sanafi.probe.probes.WakeService
 import app.sanafi.probe.ui.Labels
 import app.sanafi.probe.ui.MainActivity
 import app.sanafi.probe.ui.SettingsActivity
@@ -213,5 +216,26 @@ class AppScreensTest {
         assertEquals(Status.FAIL, result.status)
         assertTrue(result.detail.contains("الصلاحية"))
         assertEquals(result, ProbeStore(app).get(ProbeId.MIC_WATCH))
+    }
+
+    @Test
+    fun `the wake word row starts the listening service in the mode of the button pressed`() {
+        shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        button(activity.window.decorView, "اختبار النداء (٦٠ ثانية)").performClick()
+        val calling = shadowOf(app).nextStartedService
+        assertEquals(WakeService::class.java.name, calling.component!!.className)
+        assertEquals(WakeMode.CALLING.name, calling.getStringExtra(WakeService.EXTRA_MODE))
+        button(activity.window.decorView, "بدون نداء (٦٠ ثانية)").performClick()
+        assertEquals(WakeMode.QUIET.name, shadowOf(app).nextStartedService.getStringExtra(WakeService.EXTRA_MODE))
+    }
+
+    @Test
+    fun `a wake word run without permission is saved as a permission failure`() {
+        val result = WakeListener(app).run(WakeMode.CALLING, seconds = 1)
+        assertEquals(ProbeId.WAKE_OVER_MUSIC, result.id)
+        assertEquals(Status.FAIL, result.status)
+        assertTrue(result.detail.contains("الصلاحية"))
+        assertEquals(result, ProbeStore(app).get(ProbeId.WAKE_OVER_MUSIC))
     }
 }

@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import app.sanafi.probe.core.ProbeId
+import app.sanafi.probe.core.WakeMode
 import app.sanafi.probe.probes.BootListenService
 import app.sanafi.probe.probes.CallProbe
 import app.sanafi.probe.probes.MicMatrixProbe
@@ -21,6 +22,8 @@ import app.sanafi.probe.probes.MicRecorder
 import app.sanafi.probe.probes.MicWatchService
 import app.sanafi.probe.probes.MicWatcher
 import app.sanafi.probe.probes.TelephonyProbe
+import app.sanafi.probe.probes.WakeListener
+import app.sanafi.probe.probes.WakeService
 import kotlinx.coroutines.launch
 
 /** Wires each probe's buttons into its row on the main screen. */
@@ -89,7 +92,11 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
             button("اختبار الصدى") { startCall("mul_abdullah", CallProbe.Mode.ECHO) }
         }
 
-        rows.getValue(ProbeId.WAKE_OVER_MUSIC).note("يجي في البناء الثاني، بعد ما نشوف نتيجة الميكروفون.")
+        rows.getValue(ProbeId.WAKE_OVER_MUSIC).apply {
+            note("شغّل أغنية بالصوت اللي تسمعه عادة. «اختبار النداء»: قل «أليكسا» ٥ مرات وبين كل مرة ٥ ثواني، وتسمع صفارة كل ما يلقطها. «بدون نداء»: خل الأغنية شغالة ولا تتكلم.")
+            button("اختبار النداء (٦٠ ثانية)") { startWake(WakeMode.CALLING) }
+            button("بدون نداء (٦٠ ثانية)") { startWake(WakeMode.QUIET) }
+        }
 
         rows.getValue(ProbeId.TELEPHONY).apply {
             button("افحص الجهاز") { telephony.evaluate(rang = null); refresh() }
@@ -105,6 +112,15 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
             .setNegativeButton("لا") { _, _ -> telephony.evaluate(rang = false); refresh() }
             .setCancelable(false)
             .show()
+    }
+
+    private fun startWake(mode: WakeMode) {
+        activity.withPermission(Manifest.permission.RECORD_AUDIO) {
+            activity.startForegroundService(Intent(activity, WakeService::class.java).putExtra(WakeService.EXTRA_MODE, mode.name))
+            val text = if (mode == WakeMode.CALLING) "يسمع دقيقة… قل «أليكسا» ٥ مرات." else "يسمع دقيقة… لا تتكلم."
+            activity.showProgress(ProbeId.WAKE_OVER_MUSIC, text)
+            activity.window.decorView.postDelayed({ refresh() }, (WakeListener.LISTEN_SECONDS + 3) * 1000L)
+        }
     }
 
     private fun startCall(voiceLabel: String, mode: CallProbe.Mode) {

@@ -167,6 +167,42 @@ object ProbeReducer {
         }
     }
 
+    private const val MIN_CALLS_HEARD = 3
+
+    /**
+     * The wake word over music. A calling run counts how many of the five calls were heard; a
+     * quiet run counts false alarms. Runs accumulate: the probe passes when at least three calls
+     * were heard and no quiet run raised a false alarm.
+     */
+    fun wake(permissionGranted: Boolean, run: WakeRun?, error: String?, previous: ProbeResult?, nowMs: Long): ProbeResult {
+        val before = previous?.takeIf { it.id == ProbeId.WAKE_OVER_MUSIC }?.numbers ?: emptyMap()
+        fun result(status: Status, detail: String, numbers: Map<String, Double> = before) = ProbeResult(ProbeId.WAKE_OVER_MUSIC, status, detail, numbers, nowMs)
+        if (!permissionGranted) return result(Status.FAIL, "ما انعطت الصلاحية للميكروفون. اسمح بها من إعدادات التطبيق.")
+        if (error != null || run == null) return result(Status.FAIL, "ما اشتغل كاشف النداء: ${error ?: "سبب غير معروف"}")
+        val numbers = before + when (run.mode) {
+            WakeMode.CALLING -> mapOf(
+                "detections" to run.detections.toDouble(),
+                "max_score" to run.maxScore,
+                "avg_cpu_ms_per_frame" to run.avgMsPerFrame,
+                "listened_s" to run.listenedSeconds,
+            )
+            WakeMode.QUIET -> mapOf(
+                "false_alarms" to run.detections.toDouble(),
+                "quiet_max_score" to run.maxScore,
+                "quiet_listened_s" to run.listenedSeconds,
+            )
+        }
+        val heard = numbers["detections"]?.toInt()
+        val falseAlarms = numbers["false_alarms"]?.toInt()
+        return when {
+            heard == null -> result(Status.NOT_RUN, "بدون نداء: انطلق بالغلط $falseAlarms مرات. باقي «اختبار النداء».", numbers)
+            heard < MIN_CALLS_HEARD -> result(Status.FAIL, "سمع النداء $heard مرات بس (المطلوب $MIN_CALLS_HEARD من ٥ على الأقل).", numbers)
+            falseAlarms != null && falseAlarms > 0 -> result(Status.FAIL, "سمع النداء $heard مرات، لكن انطلق بالغلط $falseAlarms مرات والأغنية شغالة.", numbers)
+            falseAlarms == null -> result(Status.PASS, "سمع النداء $heard مرات والأغنية شغالة. باقي «اختبار بدون نداء».", numbers)
+            else -> result(Status.PASS, "سمع النداء $heard مرات والأغنية شغالة، وما انطلق بالغلط.", numbers)
+        }
+    }
+
     /** Phone-call ability. Undecided (NOT_RUN) until the owner answers whether the test call rang. */
     fun telephony(hasTelephony: Boolean, simReady: Boolean, canResolveCall: Boolean, rang: Boolean?, nowMs: Long): ProbeResult {
         val numbers = buildMap {

@@ -105,6 +105,11 @@
             android:name=".probes.MicWatchService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- Question 7: listens for the wake word for a minute while music plays. -->
+        <service
+            android:name=".probes.WakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
         <receiver
             android:name=".probes.BootReceiver"
             android:exported="true">

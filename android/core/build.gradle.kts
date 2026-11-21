@@ -18,6 +18,10 @@ kotlin {
 dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.serialization.json)
+    // The wake-word pipeline is written against the ONNX Runtime API; the app supplies the Android
+    // build of it, and the tests here run the same code on the desktop build.
+    compileOnly(libs.onnxruntime.jvm)
+    testImplementation(libs.onnxruntime.jvm)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }

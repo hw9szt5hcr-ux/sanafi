@@ -6,3 +6,7 @@ build/
 .idea/
 local.properties
 .vercel/
+
+# openWakeWord models and test clips, fetched by android/scripts/fetch-wake-models.sh
+android/app/src/main/assets/oww/
+android/core/src/test/resources/oww/
