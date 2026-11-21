@@ -59,6 +59,13 @@ describe('POST /api/agent-session', () => {
     expect(out.json).toEqual({ error: 'humain', code: 'AUTH_SCOPE_MISSING' });
   });
 
+  test('a wrong secret is 401 even when the API key is not configured', async () => {
+    delete process.env.API_KEY;
+    const out = await call('POST', { 'x-device-secret': 'nope' }, '{"device_id":"d"}');
+    expect(out.status).toBe(401);
+    expect(out.json).toEqual({ error: 'bad_secret' });
+  });
+
   test('a missing API key is a 500, not a crash', async () => {
     delete process.env.API_KEY;
     const out = await call('POST', { 'x-device-secret': 's3cret' }, '{"device_id":"d"}');

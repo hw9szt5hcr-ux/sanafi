@@ -33,6 +33,9 @@ export interface Reply {
   body: object;
 }
 
+/** The server itself is not set up (for example a missing environment variable). */
+export class ConfigError extends Error {}
+
 function digest(value: string): Buffer {
   return createHash('sha256').update(value).digest();
 }
@@ -85,6 +88,7 @@ export async function handle(req: { secret: string | undefined; body: unknown },
       },
     };
   } catch (err) {
+    if (err instanceof ConfigError) throw err;
     return toErrorBody(err);
   }
 }

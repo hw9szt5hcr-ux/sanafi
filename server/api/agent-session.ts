@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { TTSClient } from '@humain-voice/sdk';
 import { makeCreateSession } from '../lib/humain.js';
-import { handle } from '../lib/session.js';
+import { ConfigError, handle } from '../lib/session.js';
 import { makeResolveVoice } from '../lib/voices.js';
 
 function env(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set`);
+  if (!value) throw new ConfigError(`${name} is not set`);
   return value;
 }
 
@@ -49,7 +49,7 @@ export default async function handler(req: IncomingMessage & { body?: unknown },
   try {
     reply = await handle(
       { secret: Array.isArray(header) ? header[0] : header, body: await readJson(req) },
-      { createSession: makeCreateSession(env('API_URL'), env('API_KEY')), resolveVoice },
+      { createSession: (request) => makeCreateSession(env('API_URL'), env('API_KEY'))(request), resolveVoice },
     );
   } catch {
     reply = { status: 500, body: { error: 'server_misconfigured' } };
