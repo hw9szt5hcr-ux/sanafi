@@ -3,6 +3,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 export const PROMPT =
   'أنت "سنافي"، رفيق سواق سعودي. تتكلم باللهجة النجدية، خفيف دم ومختصر. هذي مكالمة اختبار: رد بجملة أو جملتين.';
 export const INTRO = 'هلا والله، آمرني.';
+export const ECHO_PROMPT =
+  'أنت "سنافي". هذا اختبار صدى: بعد الافتتاحية لا تتكلم أبداً إلا إذا كلمك المستخدم بكلام واضح ومباشر.';
+export const ECHO_INTRO =
+  'هذا اختبار للصدى. بتكلم الحين ربع دقيقة تقريباً وانت لا ترد علي. واحد، اثنين، ثلاثة، أربعة، خمسة، ستة، سبعة، ثمانية، تسعة، عشرة. أحد عشر، اثنا عشر، ثلاثة عشر، أربعة عشر، خمسة عشر. خلصنا، مشكور.';
 export const ALLOWED_VOICE_LABELS = ['mul_abdullah', 'mul_abdulaziz'] as const;
 const MAX_IDENTITY_LENGTH = 128;
 
@@ -39,8 +43,9 @@ export function isAuthorized(headerValue: string | undefined, secret: string): b
   return timingSafeEqual(digest(headerValue), digest(secret));
 }
 
-export function buildSessionRequest(input: { deviceId: string; voiceId?: string }): SessionRequest {
-  const agent: SessionRequest['agent'] = { prompt: PROMPT, intro: INTRO, web_search: false };
+export function buildSessionRequest(input: { deviceId: string; voiceId?: string; mode?: 'echo' }): SessionRequest {
+  const echo = input.mode === 'echo';
+  const agent: SessionRequest['agent'] = { prompt: echo ? ECHO_PROMPT : PROMPT, intro: echo ? ECHO_INTRO : INTRO, web_search: false };
   if (input.voiceId) agent.voice_id = input.voiceId;
   return { participant: { identity: input.deviceId, gender: 'male' }, agent };
 }
@@ -50,13 +55,13 @@ export function toErrorBody(err: unknown): { status: 502; body: { error: 'humain
   return { status: 502, body: { error: 'humain', code: typeof code === 'string' && code ? code : 'UNKNOWN' } };
 }
 
-function parseBody(body: unknown): { deviceId: string; voiceLabel?: string } | undefined {
+function parseBody(body: unknown): { deviceId: string; voiceLabel?: string; mode?: 'echo' } | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
-  const { device_id: deviceId, voice_label: voiceLabel } = body as Record<string, unknown>;
+  const { device_id: deviceId, voice_label: voiceLabel, mode } = body as Record<string, unknown>;
   if (typeof deviceId !== 'string' || deviceId.length === 0 || deviceId.length > MAX_IDENTITY_LENGTH) return undefined;
-  if (voiceLabel === undefined) return { deviceId };
-  if (typeof voiceLabel !== 'string' || !(ALLOWED_VOICE_LABELS as readonly string[]).includes(voiceLabel)) return undefined;
-  return { deviceId, voiceLabel };
+  if (mode !== undefined && mode !== 'echo') return undefined;
+  if (voiceLabel !== undefined && (typeof voiceLabel !== 'string' || !(ALLOWED_VOICE_LABELS as readonly string[]).includes(voiceLabel))) return undefined;
+  return { deviceId, voiceLabel: voiceLabel as string | undefined, mode: mode as 'echo' | undefined };
 }
 
 export async function handle(req: { secret: string | undefined; body: unknown }, deps: Deps): Promise<Reply> {
@@ -68,7 +73,7 @@ export async function handle(req: { secret: string | undefined; body: unknown },
 
   try {
     const voiceId = await deps.resolveVoice(input.voiceLabel);
-    const session = await deps.createSession(buildSessionRequest({ deviceId: input.deviceId, voiceId }));
+    const session = await deps.createSession(buildSessionRequest({ deviceId: input.deviceId, voiceId, mode: input.mode }));
     return {
       status: 200,
       body: {
