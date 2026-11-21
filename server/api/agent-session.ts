@@ -4,8 +4,9 @@ import { makeCreateSession } from '../lib/humain.js';
 import { ConfigError, handle } from '../lib/session.js';
 import { makeResolveVoice } from '../lib/voices.js';
 
+/** Reads a setting; a name typed in lowercase in the dashboard (api_key) is accepted too. */
 function env(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name] ?? process.env[name.toLowerCase()];
   if (!value) throw new ConfigError(`${name} is not set`);
   return value;
 }

@@ -66,6 +66,24 @@ describe('POST /api/agent-session', () => {
     expect(out.json).toEqual({ error: 'bad_secret' });
   });
 
+  test('the key is also accepted when the variable was saved in lowercase as api_key', async () => {
+    delete process.env.API_KEY;
+    process.env.api_key = 'LOWER';
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
+      server_url: 'wss://lk', participant_token: 'tok', session_id: 'as_1', expires_at: 'e',
+      limits: { max_duration_s: 900, idle_timeout_s: 120 },
+    }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const out = await call('POST', { 'x-device-secret': 's3cret' }, '{"device_id":"d"}');
+      expect(out.status).toBe(200);
+      const init = (fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1];
+      expect((init.headers as Record<string, string>)['x-api-key']).toBe('LOWER');
+    } finally {
+      delete process.env.api_key;
+    }
+  });
+
   test('a missing API key is a 500, not a crash', async () => {
     delete process.env.API_KEY;
     const out = await call('POST', { 'x-device-secret': 's3cret' }, '{"device_id":"d"}');
