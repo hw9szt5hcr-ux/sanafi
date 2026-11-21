@@ -17,7 +17,7 @@ object ReportFormatter {
         appendLine("device: $device")
         for (r in results) {
             append("${r.id.name}: ${r.status.name}")
-            if (r.numbers.isNotEmpty()) append(" | " + r.numbers.entries.joinToString(", ") { "${it.key}=${it.value}" })
+            if (r.numbers.isNotEmpty()) append(" | " + r.numbers.entries.joinToString(", ") { "${it.key}=${String.format(java.util.Locale.US, "%.1f", it.value)}" })
             if (r.detail.isNotBlank()) append(" | " + r.detail.replace('\n', ' '))
             appendLine()
         }
