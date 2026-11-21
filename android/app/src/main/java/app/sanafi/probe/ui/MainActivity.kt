@@ -3,6 +3,7 @@ package app.sanafi.probe.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import app.sanafi.probe.BuildConfig
@@ -29,6 +31,13 @@ class MainActivity : AppCompatActivity() {
     private val statusViews = mutableMapOf<ProbeId, TextView>()
     private val detailViews = mutableMapOf<ProbeId, TextView>()
     private val actionRows = mutableMapOf<ProbeId, LinearLayout>()
+    private lateinit var actions: ProbeActions
+    private var afterPermission: ((Boolean) -> Unit)? = null
+    private var awaitingRangAnswer = false
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        afterPermission?.invoke(granted)
+        afterPermission = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,12 +46,39 @@ class MainActivity : AppCompatActivity() {
             store.save(ProbeResult(ProbeId.INSTALL, Status.PASS, "التطبيق تثبّت واشتغل.", atEpochMs = System.currentTimeMillis()))
         }
         setContentView(buildScreen())
-        ProbeActions(this, store, ::refresh).attach(actionRows)
+        actions = ProbeActions(this, ::refresh).also { it.attach(actionRows) }
+    }
+
+    /** Runs [then] once [permission] is granted; with [proceedWhenDenied] it runs either way. */
+    fun withPermission(permission: String, proceedWhenDenied: Boolean = false, then: () -> Unit) {
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) return then()
+        afterPermission = { granted ->
+            if (granted || proceedWhenDenied) then()
+            else Toast.makeText(this, "الاختبار يحتاج هالصلاحية. اسمح بها وجرّب مرة ثانية.", Toast.LENGTH_LONG).show()
+        }
+        permissionLauncher.launch(permission)
+    }
+
+    /** Shows a running status in a probe's row until its result is saved. */
+    fun showProgress(id: ProbeId, text: String) {
+        detailViews[id]?.apply {
+            this.text = text
+            visibility = View.VISIBLE
+        }
+    }
+
+    /** The owner is leaving for the dialer; ask whether the phone rang when they come back. */
+    fun expectRangAnswer() {
+        awaitingRangAnswer = true
     }
 
     override fun onResume() {
         super.onResume()
         refresh()
+        if (awaitingRangAnswer) {
+            awaitingRangAnswer = false
+            actions.askIfItRang()
+        }
     }
 
     fun refresh() {
