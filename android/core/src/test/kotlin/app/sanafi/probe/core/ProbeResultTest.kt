@@ -8,7 +8,7 @@ class ProbeResultTest {
     @Test
     fun `ids are the eight phase-0 questions in order`() {
         assertEquals(
-            listOf("INSTALL", "MIC", "BOOT_LISTEN", "ASSIST_BUTTON", "CALL_LATENCY", "ECHO", "WAKE_OVER_MUSIC", "TELEPHONY"),
+            listOf("INSTALL", "MIC", "BOOT_LISTEN", "ASSIST_BUTTON", "MIC_WATCH", "CALL_LATENCY", "ECHO", "WAKE_OVER_MUSIC", "TELEPHONY"),
             ProbeId.values().map { it.name },
         )
     }

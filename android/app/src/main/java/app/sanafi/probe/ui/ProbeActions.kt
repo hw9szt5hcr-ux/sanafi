@@ -18,6 +18,8 @@ import app.sanafi.probe.probes.CallProbe
 import app.sanafi.probe.probes.MicMatrixProbe
 import app.sanafi.probe.probes.MicProbe
 import app.sanafi.probe.probes.MicRecorder
+import app.sanafi.probe.probes.MicWatchService
+import app.sanafi.probe.probes.MicWatcher
 import app.sanafi.probe.probes.TelephonyProbe
 import kotlinx.coroutines.launch
 
@@ -64,6 +66,17 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
         rows.getValue(ProbeId.ASSIST_BUTTON).apply {
             note("اختر «اختبار سنافي» كمساعد، ثم اضغط زر الدركسون ضغطة مطوّلة.")
             button("اختيار المساعد") { openAssistantSettings() }
+        }
+
+        rows.getValue(ProbeId.MIC_WATCH).apply {
+            note("اضغط «ابدأ المراقبة»، ارجع للشاشة الرئيسية، اضغط زر الدركسون مطوّل وتكلم ١٠ ثواني. بعد دقيقة ارجع هنا.")
+            button("ابدأ المراقبة (٦٠ ثانية)") {
+                activity.withPermission(Manifest.permission.RECORD_AUDIO) {
+                    activity.startForegroundService(Intent(activity, MicWatchService::class.java))
+                    activity.showProgress(ProbeId.MIC_WATCH, "يراقب الميكروفون دقيقة… روح اضغط زر الدركسون وتكلم.")
+                    postDelayed({ refresh() }, (MicWatcher.WATCH_SECONDS + 3) * 1000L)
+                }
+            }
         }
 
         rows.getValue(ProbeId.CALL_LATENCY).apply {

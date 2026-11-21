@@ -1,7 +1,7 @@
 package app.sanafi.probe.core
 
-/** The eight Phase 0 questions, in the order the owner runs them. */
-enum class ProbeId { INSTALL, MIC, BOOT_LISTEN, ASSIST_BUTTON, CALL_LATENCY, ECHO, WAKE_OVER_MUSIC, TELEPHONY }
+/** The Phase 0 questions, in the order the owner runs them. */
+enum class ProbeId { INSTALL, MIC, BOOT_LISTEN, ASSIST_BUTTON, MIC_WATCH, CALL_LATENCY, ECHO, WAKE_OVER_MUSIC, TELEPHONY }
 
 enum class Status { NOT_RUN, PASS, FAIL }
 

@@ -20,6 +20,8 @@ import app.sanafi.probe.probes.BootListenService
 import app.sanafi.probe.probes.BootReceiver
 import app.sanafi.probe.probes.CallProbe
 import app.sanafi.probe.probes.MicMatrixProbe
+import app.sanafi.probe.probes.MicWatchService
+import app.sanafi.probe.probes.MicWatcher
 import app.sanafi.probe.probes.TelephonyProbe
 import app.sanafi.probe.ui.Labels
 import app.sanafi.probe.ui.MainActivity
@@ -52,13 +54,13 @@ class AppScreensTest {
         views(root).filterIsInstance<Button>().first { it.text.toString() == label }
 
     @Test
-    fun `first launch records the install and shows a row for each of the eight probes`() {
+    fun `first launch records the install and shows a row for every probe`() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         assertEquals(Status.PASS, ProbeStore(app).get(ProbeId.INSTALL)!!.status)
         val shown = texts(activity.window.decorView)
         ProbeId.values().forEach { assertTrue("no row for $it", shown.contains(Labels.title(it))) }
         assertEquals(1, shown.count { it == Labels.status(Status.PASS) })
-        assertEquals(7, shown.count { it == Labels.status(Status.NOT_RUN) })
+        assertEquals(ProbeId.values().size - 1, shown.count { it == Labels.status(Status.NOT_RUN) })
     }
 
     @Test
@@ -194,5 +196,22 @@ class AppScreensTest {
         val result = TelephonyProbe(app).evaluate(rang = null)
         assertEquals(Status.FAIL, result.status)
         assertEquals(result, ProbeStore(app).get(ProbeId.TELEPHONY))
+    }
+
+    @Test
+    fun `the microphone watch button starts the watching service`() {
+        shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        button(activity.window.decorView, "ابدأ المراقبة (٦٠ ثانية)").performClick()
+        assertEquals(MicWatchService::class.java.name, shadowOf(app).nextStartedService.component!!.className)
+    }
+
+    @Test
+    fun `a microphone watch without permission is saved as a permission failure`() {
+        val result = MicWatcher(app).run(seconds = 1)
+        assertEquals(ProbeId.MIC_WATCH, result.id)
+        assertEquals(Status.FAIL, result.status)
+        assertTrue(result.detail.contains("الصلاحية"))
+        assertEquals(result, ProbeStore(app).get(ProbeId.MIC_WATCH))
     }
 }

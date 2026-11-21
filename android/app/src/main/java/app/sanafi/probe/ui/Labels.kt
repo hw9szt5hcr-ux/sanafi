@@ -9,6 +9,7 @@ object Labels {
         ProbeId.MIC -> "٢. الميكروفون"
         ProbeId.BOOT_LISTEN -> "٣. الاستماع بعد تشغيل السيارة"
         ProbeId.ASSIST_BUTTON -> "٤. زر الدركسون"
+        ProbeId.MIC_WATCH -> "٤ب. مراقبة الميكروفون مع الزر"
         ProbeId.CALL_LATENCY -> "٥. سرعة رد سنافي"
         ProbeId.ECHO -> "٦. الصدى"
         ProbeId.WAKE_OVER_MUSIC -> "٧. النداء فوق الأغنية"

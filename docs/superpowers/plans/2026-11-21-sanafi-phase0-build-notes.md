@@ -38,3 +38,5 @@ Final: minor (deferred): release tags (probe-N) point at the default branch comm
 Final: minor (deferred): the device secret is stored in plain SharedPreferences on the box.
 Final: minor (deferred): Vercel deployment of server/ (TypeScript ESM with .js import specifiers) is untested until the owner deploys.
 Final: Ruling: workspace directory kept, not deleted — the owner's standing rule is to ask before deleting any folder — cost if wrong: a git-ignored scratch folder stays.
+Device result (build 5): every microphone route reads -120 dBFS; the box accepts the app as the digital assistant (its service started and took a reading) but the steering wheel button never reaches it (ASSIST_BUTTON stays NOT_RUN) and opens the assistant settings page instead.
+After-plan: Ruling: added a ninth probe MIC_WATCH (a 60-second foreground-service recording in half-second windows that also records whether Android is silencing the recording and whether another app records at the same time) — the device results leave one open question, whether the car microphone opens only while the button is held — cost if wrong: one extra row on the screen and in the report.

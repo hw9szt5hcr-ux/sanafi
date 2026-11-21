@@ -100,6 +100,11 @@
             android:name=".probes.BootListenService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+        <!-- Watches the microphone for a minute while the owner presses the steering wheel button. -->
+        <service
+            android:name=".probes.MicWatchService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
         <receiver
             android:name=".probes.BootReceiver"
             android:exported="true">

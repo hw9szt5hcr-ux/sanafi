@@ -3,6 +3,19 @@ package app.sanafi.probe.core
 /** One microphone attempt: which source or input was tried and how loud the loudest sample was. */
 data class MicReading(val label: String, val peakDbfs: Double)
 
+/**
+ * A long microphone watch: the loudest sample of each window, and what Android reported meanwhile.
+ * [silencedWindows] counts windows where Android said it was muting this recording;
+ * [otherRecorderWindows] counts windows where some other app was recording too.
+ */
+data class MicWatchLog(
+    val windowMs: Int,
+    val windowPeaksDbfs: List<Double>,
+    val silencedWindows: Int,
+    val otherRecorderWindows: Int,
+    val sanafiIsAssistant: Boolean,
+)
+
 /** Turns raw observations from a probe into the result that is stored and reported. */
 object ProbeReducer {
     private const val MAX_SELF_INTERRUPTIONS = 1
@@ -118,6 +131,40 @@ object ProbeReducer {
         }
         val loudest = String.format(java.util.Locale.US, "%.0f", numbers.values.max())
         return fail("كل المصادر صامتة (أعلى مستوى $loudest). مداخل الجهاز: ${inputDevices.joinToString("، ").ifEmpty { "لا شيء" }}.", numbers)
+    }
+
+    /**
+     * Did the microphone open at any moment of a long watch, for example while the steering
+     * wheel button was held? Passes when any window heard sound, and says when and for how long.
+     */
+    fun micWatch(permissionGranted: Boolean, log: MicWatchLog, nowMs: Long): ProbeResult {
+        fun fail(detail: String, numbers: Map<String, Double> = emptyMap()) = ProbeResult(ProbeId.MIC_WATCH, Status.FAIL, detail, numbers, nowMs)
+        if (!permissionGranted) return fail("ما انعطت الصلاحية للميكروفون. اسمح بها من إعدادات التطبيق.")
+        if (log.windowPeaksDbfs.isEmpty()) return fail("ما قدر التطبيق يفتح الميكروفون.")
+        fun seconds(windows: Int) = windows * log.windowMs / 1000.0
+        val heard = log.windowPeaksDbfs.withIndex().filter { it.value > HEARD_THRESHOLD_DBFS }.map { it.index }
+        val numbers = buildMap {
+            put("watched_s", seconds(log.windowPeaksDbfs.size))
+            put("heard_s", seconds(heard.size))
+            if (heard.isNotEmpty()) {
+                put("first_heard_s", seconds(heard.first()))
+                put("last_heard_s", seconds(heard.last() + 1))
+            }
+            put("max_peak_dbfs", log.windowPeaksDbfs.max().coerceAtLeast(SILENCE_FLOOR_DBFS))
+            put("silenced_s", seconds(log.silencedWindows))
+            put("other_recorders_s", seconds(log.otherRecorderWindows))
+            put("sanafi_is_assistant", if (log.sanafiIsAssistant) 1.0 else 0.0)
+        }
+        if (heard.isNotEmpty()) {
+            val first = String.format(java.util.Locale.US, "%.1f", seconds(heard.first()))
+            val total = String.format(java.util.Locale.US, "%.1f", seconds(heard.size))
+            return ProbeResult(ProbeId.MIC_WATCH, Status.PASS, "الميكروفون انفتح بعد $first ثانية ولقط صوت لمدة $total ثانية.", numbers, nowMs)
+        }
+        return if (log.silencedWindows > 0) {
+            fail("صامت طول المراقبة، والنظام كاتم التسجيل: تطبيق ثاني ماسك الميكروفون أو الميكروفون مقفول من الخصوصية.", numbers)
+        } else {
+            fail("الميكروفون ما انفتح طول المراقبة.", numbers)
+        }
     }
 
     /** Phone-call ability. Undecided (NOT_RUN) until the owner answers whether the test call rang. */
