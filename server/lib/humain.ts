@@ -21,13 +21,16 @@ function codeFrom(text: string): string | undefined {
 
 /** Starts a Voice Agent session over HUMAIN's documented REST endpoint. */
 export function makeCreateSession(apiUrl: string, apiKey: string, fetchImpl: FetchLike = fetch) {
-  const endpoint = `${apiUrl.replace(/\/+$/, '')}/agent/sessions`;
+  const endpoint = `${apiUrl.trim().replace(/\/+$/, '')}/agent/sessions`;
+  const key = apiKey.trim();
   return async (request: SessionRequest): Promise<SessionResponse> => {
+    // A key can only be sent as a header when it is plain printable ASCII with no spaces.
+    if (!/^[\x21-\x7e]+$/.test(key)) throw new HumainError('API_KEY_INVALID_CHARS');
     let response: Response;
     try {
       response = await fetchImpl(endpoint, {
         method: 'POST',
-        headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+        headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
     } catch {

@@ -6,7 +6,7 @@ import { makeResolveVoice } from '../lib/voices.js';
 
 /** Reads a setting; a name typed in lowercase in the dashboard (api_key) is accepted too. */
 function env(name: string): string {
-  const value = process.env[name] ?? process.env[name.toLowerCase()];
+  const value = (process.env[name] ?? process.env[name.toLowerCase()])?.trim();
   if (!value) throw new ConfigError(`${name} is not set`);
   return value;
 }

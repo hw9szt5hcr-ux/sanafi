@@ -34,6 +34,23 @@ describe('makeCreateSession', () => {
     await expect(create(request)).rejects.toMatchObject({ code });
   });
 
+  test('a key pasted with spaces or a line break around it is sent clean', async () => {
+    const fetchImpl = vi.fn(async () => reply(201, JSON.stringify({ server_url: 'w', participant_token: 't', session_id: 's', expires_at: 'e', limits: { max_duration_s: null, idle_timeout_s: null } })));
+    await makeCreateSession('https://api', '  KEY-123\n', fetchImpl)(request);
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('KEY-123');
+  });
+
+  test.each([
+    ['a space in the middle', 'KEY 123'],
+    ['a non-Latin character', 'KEY\u0661\u0662\u0663'],
+    ['nothing but whitespace', '   '],
+  ])('a key with %s is refused before any request is made', async (_name, key) => {
+    const fetchImpl = vi.fn();
+    await expect(makeCreateSession('https://api', key, fetchImpl)(request)).rejects.toMatchObject({ code: 'API_KEY_INVALID_CHARS' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('a network failure rejects with code NETWORK', async () => {
     const create = makeCreateSession('https://api', 'KEY', async () => { throw new TypeError('fetch failed'); });
     await expect(create(request)).rejects.toMatchObject({ code: 'NETWORK' });
