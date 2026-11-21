@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -21,7 +22,11 @@ object MicRecorder {
 
     /** Blocks for [seconds]. Returns no samples when the recorder cannot be opened. */
     @SuppressLint("MissingPermission")
-    fun record(seconds: Int, source: Int = MediaRecorder.AudioSource.VOICE_RECOGNITION): Recording {
+    fun record(
+        seconds: Int,
+        source: Int = MediaRecorder.AudioSource.VOICE_RECOGNITION,
+        preferredDevice: AudioDeviceInfo? = null,
+    ): Recording {
         val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuffer <= 0) return Recording(ShortArray(0), null)
         val recorder = try {
@@ -37,6 +42,7 @@ object MicRecorder {
         var filled = 0
         var device: String? = null
         try {
+            if (preferredDevice != null) recorder.setPreferredDevice(preferredDevice)
             recorder.startRecording()
             while (filled < out.size) {
                 val read = recorder.read(out, filled, minOf(1600, out.size - filled))

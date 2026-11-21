@@ -1,5 +1,8 @@
 package app.sanafi.probe.core
 
+/** One microphone attempt: which source or input was tried and how loud the loudest sample was. */
+data class MicReading(val label: String, val peakDbfs: Double)
+
 /** Turns raw observations from a probe into the result that is stored and reported. */
 object ProbeReducer {
     private const val MAX_SELF_INTERRUPTIONS = 1
@@ -8,10 +11,13 @@ object ProbeReducer {
         if (!permissionGranted) {
             return ProbeResult(ProbeId.MIC, Status.FAIL, "ما انعطت الصلاحية للميكروفون. اسمح بها من إعدادات التطبيق.", atEpochMs = nowMs)
         }
-        if (AudioLevel.isSilent(pcm)) {
-            return ProbeResult(ProbeId.MIC, Status.FAIL, "التسجيل صامت: الميكروفون ما يوصّل صوت للتطبيق.", atEpochMs = nowMs)
-        }
         val peak = AudioLevel.peakDbfs(pcm)
+        if (AudioLevel.isSilent(pcm)) {
+            return ProbeResult(
+                ProbeId.MIC, Status.FAIL, "التسجيل صامت: الميكروفون ما يوصّل صوت للتطبيق.",
+                mapOf("peak_dbfs" to peak.coerceAtLeast(-120.0)), nowMs,
+            )
+        }
         return ProbeResult(ProbeId.MIC, Status.PASS, "الميكروفون يلقط الصوت.", mapOf("peak_dbfs" to peak), nowMs)
     }
 
@@ -84,9 +90,34 @@ object ProbeReducer {
     }
 
     /** A launch through the assistant path (steering wheel button or an assist intent). */
-    fun assist(action: String, previous: ProbeResult?, nowMs: Long): ProbeResult {
+    fun assist(action: String, previous: ProbeResult?, nowMs: Long, micPeakDbfs: Double? = null): ProbeResult {
         val count = (previous?.takeIf { it.id == ProbeId.ASSIST_BUTTON }?.numbers?.get("launch_count") ?: 0.0) + 1.0
-        return ProbeResult(ProbeId.ASSIST_BUTTON, Status.PASS, "اشتغل عن طريق: $action", mapOf("launch_count" to count), nowMs)
+        if (micPeakDbfs == null) {
+            return ProbeResult(ProbeId.ASSIST_BUTTON, Status.PASS, "اشتغل عن طريق: $action", mapOf("launch_count" to count), nowMs)
+        }
+        val heard = micPeakDbfs > HEARD_THRESHOLD_DBFS
+        return ProbeResult(
+            ProbeId.ASSIST_BUTTON, Status.PASS,
+            "اشتغل عن طريق: $action. الميكروفون وقت التشغيل: ${if (heard) "يلقط" else "صامت"}.",
+            mapOf("launch_count" to count, "launch_mic_peak_dbfs" to micPeakDbfs.coerceAtLeast(SILENCE_FLOOR_DBFS)), nowMs,
+        )
+    }
+
+    /**
+     * The microphone tried through every audio source and input the device offers.
+     * Passes when at least one of them heard sound, and names the ones that did.
+     */
+    fun micMatrix(permissionGranted: Boolean, readings: List<MicReading>, inputDevices: List<String>, nowMs: Long): ProbeResult {
+        fun fail(detail: String, numbers: Map<String, Double> = emptyMap()) = ProbeResult(ProbeId.MIC, Status.FAIL, detail, numbers, nowMs)
+        if (!permissionGranted) return fail("ما انعطت الصلاحية للميكروفون. اسمح بها من إعدادات التطبيق.")
+        if (readings.isEmpty()) return fail("ما قدر التطبيق يفتح الميكروفون بأي طريقة.")
+        val numbers = readings.associate { it.label to it.peakDbfs.coerceAtLeast(SILENCE_FLOOR_DBFS) }
+        val heard = readings.filter { it.peakDbfs > HEARD_THRESHOLD_DBFS }.map { it.label }
+        if (heard.isNotEmpty()) {
+            return ProbeResult(ProbeId.MIC, Status.PASS, "الميكروفون يلقط عن طريق: ${heard.joinToString("، ")}.", numbers, nowMs)
+        }
+        val loudest = String.format(java.util.Locale.US, "%.0f", numbers.values.max())
+        return fail("كل المصادر صامتة (أعلى مستوى $loudest). مداخل الجهاز: ${inputDevices.joinToString("، ").ifEmpty { "لا شيء" }}.", numbers)
     }
 
     /** Phone-call ability. Undecided (NOT_RUN) until the owner answers whether the test call rang. */

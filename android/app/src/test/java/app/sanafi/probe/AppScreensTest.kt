@@ -19,6 +19,7 @@ import app.sanafi.probe.probes.AssistActivity
 import app.sanafi.probe.probes.BootListenService
 import app.sanafi.probe.probes.BootReceiver
 import app.sanafi.probe.probes.CallProbe
+import app.sanafi.probe.probes.MicMatrixProbe
 import app.sanafi.probe.probes.TelephonyProbe
 import app.sanafi.probe.ui.Labels
 import app.sanafi.probe.ui.MainActivity
@@ -168,6 +169,23 @@ class AppScreensTest {
         assertEquals(ErrorHints.forCode("network"), result.detail)
         assertEquals(listOf("يطلب مكالمة من الخادم…"), statuses)
         assertEquals(result, ProbeStore(app).get(ProbeId.CALL_LATENCY))
+    }
+
+    @Test
+    fun `the wide microphone test without permission is saved as a permission failure`() = runBlocking {
+        val statuses = mutableListOf<String>()
+        val result = MicMatrixProbe(app).runAll { statuses += it }
+        assertEquals(ProbeId.MIC, result.id)
+        assertEquals(Status.FAIL, result.status)
+        assertTrue(result.detail.contains("الصلاحية"))
+        assertTrue(statuses.isEmpty())
+        assertEquals(result, ProbeStore(app).get(ProbeId.MIC))
+    }
+
+    @Test
+    fun `the main screen offers the wide microphone test`() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        assertNotNull(button(activity.window.decorView, "اختبار شامل (٣٠ ثانية)"))
     }
 
     @Test

@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        // A launch through the assistant path keeps listening for a few seconds before it saves.
+        window.decorView.postDelayed({ if (!isFinishing) refresh() }, 4500)
         if (awaitingRangAnswer) {
             awaitingRangAnswer = false
             actions.askIfItRang()

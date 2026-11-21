@@ -9,6 +9,7 @@ import android.service.voice.VoiceInteractionService
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import android.speech.RecognitionService
+import app.sanafi.probe.core.AudioLevel
 import app.sanafi.probe.core.ProbeId
 import app.sanafi.probe.core.ProbeReducer
 import app.sanafi.probe.data.ProbeStore
@@ -17,9 +18,25 @@ import kotlin.concurrent.thread
 
 private const val BOOT_WINDOW_MS = 180_000L
 
+/**
+ * Saves the launch at once, then listens for three seconds and adds what the microphone heard:
+ * some car boxes only hand the car microphone to the app that was opened as the assistant.
+ */
 private fun recordAssistLaunch(context: Context, action: String) {
-    val store = ProbeStore(context)
-    store.save(ProbeReducer.assist(action, store.get(ProbeId.ASSIST_BUTTON), System.currentTimeMillis()))
+    val appContext = context.applicationContext
+    val store = ProbeStore(appContext)
+    val previous = store.get(ProbeId.ASSIST_BUTTON)
+    val now = System.currentTimeMillis()
+    store.save(ProbeReducer.assist(action, previous, now))
+    if (!MicRecorder.hasPermission(appContext)) return
+    thread(name = "assist-listen") {
+        try {
+            val peak = AudioLevel.peakDbfs(MicRecorder.record(3).pcm)
+            store.save(ProbeReducer.assist(action, previous, now, peak))
+        } catch (_: Exception) {
+            // The launch itself is already saved.
+        }
+    }
 }
 
 /** Question 4, intent path: the steering button or system fires an assist or voice-command intent. */

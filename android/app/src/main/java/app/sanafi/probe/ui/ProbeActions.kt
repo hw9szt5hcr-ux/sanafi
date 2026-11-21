@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import app.sanafi.probe.core.ProbeId
 import app.sanafi.probe.probes.BootListenService
 import app.sanafi.probe.probes.CallProbe
+import app.sanafi.probe.probes.MicMatrixProbe
 import app.sanafi.probe.probes.MicProbe
 import app.sanafi.probe.probes.MicRecorder
 import app.sanafi.probe.probes.TelephonyProbe
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 /** Wires each probe's buttons into its row on the main screen. */
 class ProbeActions(private val activity: MainActivity, private val refresh: () -> Unit) {
     private val mic = MicProbe(activity)
+    private val micMatrix = MicMatrixProbe(activity)
     private val call = CallProbe(activity)
     private val telephony = TelephonyProbe(activity)
     private var callRunning = false
@@ -33,6 +35,14 @@ class ProbeActions(private val activity: MainActivity, private val refresh: () -
                 activity.withPermission(Manifest.permission.RECORD_AUDIO) {
                     activity.showProgress(ProbeId.MIC, "يسجّل… تكلّم الحين")
                     activity.lifecycleScope.launch { mic.run(); refresh() }
+                }
+            }
+            button("اختبار شامل (٣٠ ثانية)") {
+                activity.withPermission(Manifest.permission.RECORD_AUDIO) {
+                    activity.lifecycleScope.launch {
+                        micMatrix.runAll { status -> activity.showProgress(ProbeId.MIC, status) }
+                        refresh()
+                    }
                 }
             }
             button("اسمع التسجيل") {
