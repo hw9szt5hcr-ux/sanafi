@@ -20,17 +20,23 @@ jobs:
       - name: Fetch the wake-word models
         run: android/scripts/fetch-wake-models.sh
       - name: Unit tests and debug APK
-        run: gradle -p android :core:test :app:testDebugUnitTest :app:assembleDebug --console=plain
-      - name: Name the APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk sanafi-probe.apk
+        run: gradle -p android :core:test :assistant-core:test :app:testDebugUnitTest :assistant:testDebugUnitTest :app:assembleDebug :assistant:assembleDebug --console=plain
+      - name: Name the APKs
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk sanafi-probe.apk
+          cp android/assistant/build/outputs/apk/debug/assistant-debug.apk sanafi.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: sanafi-probe-apk
-          path: sanafi-probe.apk
+          name: sanafi-apks
+          path: |
+            sanafi.apk
+            sanafi-probe.apk
       - name: Publish as a release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: probe-${{ github.run_number }}
-          name: Sanafi probe build ${{ github.run_number }}
-          files: sanafi-probe.apk
+          name: Sanafi build ${{ github.run_number }}
+          files: |
+            sanafi.apk
+            sanafi-probe.apk
           make_latest: true

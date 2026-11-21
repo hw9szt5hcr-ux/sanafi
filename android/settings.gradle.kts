@@ -17,4 +17,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "sanafi-probe"
-include(":core", ":app", ":assistant-core")
+include(":core", ":app", ":assistant-core", ":assistant")
