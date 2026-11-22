@@ -87,6 +87,13 @@ class ShellTest {
     }
 
     @Test
+    fun `a button press leaves the action it arrived with in the report`() {
+        configure()
+        Robolectric.buildActivity(TriggerActivity::class.java, Intent("android.speech.action.WEB_SEARCH")).create()
+        assertTrue(DiagFile(app).load().render("H").contains(" button android.speech.action.WEB_SEARCH"))
+    }
+
+    @Test
     fun `an unconfigured app opens the settings screen instead of calling`() {
         val activity = Robolectric.buildActivity(TriggerActivity::class.java, Intent("android.speech.action.WEB_SEARCH")).create().get()
         assertEquals(MainActivity::class.java.name, shadowOf(activity).nextStartedActivity.component!!.className)

@@ -13,6 +13,7 @@ import app.sanafi.assistant.call.RoomPort
 import app.sanafi.assistant.core.After
 import app.sanafi.assistant.core.AssistantSessionClient
 import app.sanafi.assistant.core.CallEvent
+import app.sanafi.assistant.core.MicStats
 import app.sanafi.assistant.core.Memory
 import app.sanafi.assistant.core.ToolHandler
 import app.sanafi.assistant.core.ToolOutcome
@@ -32,6 +33,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -75,6 +77,8 @@ class CallTest {
             awaitCancellation()
         }
         override fun close() { steps += "close" }
+        var mic: MicStats? = null
+        override fun micStats(): MicStats? = mic
     }
 
     private val focus = object : FocusPort {
@@ -105,10 +109,11 @@ class CallTest {
         poster: HttpPoster,
         handlers: Map<String, ToolHandler> = DeviceTools(app).handlers(),
         mic: Boolean = true,
+        clock: () -> Long = { now },
     ) = AssistantCall(
         prefs = prefs(), client = AssistantSessionClient(poster), toolHandlers = handlers, appLabels = { listOf("Maps") },
         room = room, focus = focus, earcons = earcons, files = CallFiles(MemoryFile(app), UsageFile(app), DiagFile(app)),
-        micGranted = { mic }, nowMs = { now }, background = backgroundScope,
+        micGranted = { mic }, nowMs = clock, background = backgroundScope,
     )
 
     private fun flow() = steps.filter { it in setOf("pause", "resume", "close", "act", "ui:Idle") }
@@ -133,6 +138,45 @@ class CallTest {
         assertEquals(1, UsageFile(app).load().minutes(UsageLedger.monthKey(now, ZoneId.systemDefault())))
         val report = DiagFile(app).load().render("H")
         for (tag in listOf(" trigger ", " grant ", " connected ", " joined ", " first_speech ", " end agent:agent_ended")) assertTrue(tag, report.contains(tag))
+    }
+
+    @Test
+    fun `a call that goes idle on a silent microphone says so, and the report carries the level and the agent's states`() = runTest {
+        val room = FakeRoom(CallEvent.AgentState("speaking", now), CallEvent.AgentState("listening", now))
+        room.mic = MicStats(published = true, frames = 2000, peakDbfs = -120.0, recorderSources = listOf(7, 6), silenced = 1)
+        val reason = call(room, Poster(200, grantBody), clock = { now + testScheduler.currentTime }).run(ui)
+        assertEquals("idle", reason)
+        assertTrue(steps.toString(), steps.any { it.startsWith("ui:Failed:") && it.contains("الميكروفون") })
+        assertTrue(steps.contains("beep:error"))
+        assertFalse(steps.contains("beep:end"))
+        assertEquals(listOf("pause", "close", "resume"), flow())
+        assertEquals(1, UsageFile(app).load().minutes(UsageLedger.monthKey(now, ZoneId.systemDefault())))
+        val report = DiagFile(app).load().render("H")
+        for (line in listOf(" mic published=true frames=2000 peak=-120.0dBFS recorders=2[7,6] silenced=1", " states speaking>listening", " end idle ")) assertTrue("$line\n$report", report.contains(line))
+    }
+
+    @Test
+    fun `a driver who says nothing into a working microphone just gets the idle ending`() = runTest {
+        val room = FakeRoom(CallEvent.AgentState("speaking", now), CallEvent.AgentState("listening", now))
+        room.mic = MicStats(published = true, frames = 2000, peakDbfs = -48.0, recorderSources = listOf(7), silenced = 0)
+        val reason = call(room, Poster(200, grantBody), clock = { now + testScheduler.currentTime }).run(ui)
+        assertEquals("idle", reason)
+        assertFalse(steps.toString(), steps.any { it.startsWith("ui:Failed") })
+        assertEquals(listOf("pause", "close", "resume", "ui:Idle"), flow())
+        assertTrue(steps.contains("beep:end"))
+    }
+
+    @Test
+    fun `a call the driver ends himself is not blamed on the microphone`() = runTest {
+        val room = FakeRoom(CallEvent.AgentState("speaking", now), CallEvent.AgentState("listening", now))
+        room.mic = MicStats(published = true, frames = 500, peakDbfs = -120.0, recorderSources = emptyList(), silenced = 0)
+        val call = call(room, Poster(200, grantBody), clock = { now + testScheduler.currentTime })
+        val running = async { call.run(ui) }
+        advanceTimeBy(5_000)
+        call.requestEnd()
+        assertEquals("user", running.await())
+        assertFalse(steps.toString(), steps.any { it.startsWith("ui:Failed") })
+        assertTrue(steps.contains("beep:end"))
     }
 
     @Test

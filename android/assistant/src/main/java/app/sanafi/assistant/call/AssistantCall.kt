@@ -88,6 +88,8 @@ class AssistantCall(
 
         var roomUsed = false
         var heard = 0
+        var listenedMs = 0L
+        val states = mutableListOf<String>()
         var reason = "user"
         var failure: Pair<String, String>? = null
         try {
@@ -110,7 +112,8 @@ class AssistantCall(
                     note("connect", "failed: ${connected.exceptionOrNull()?.javaClass?.simpleName}")
                 } else if (connected != null) {
                     note("connected", sinceStart())
-                    controller.on(CallEvent.Connected(nowMs()))
+                    val connectedAt = nowMs()
+                    controller.on(CallEvent.Connected(connectedAt))
                     var firstSpeech = false
                     reason = coroutineScope {
                         val helpers = listOf(
@@ -126,6 +129,7 @@ class AssistantCall(
                                 val decision = controller.on(event)
                                 if (event is CallEvent.LocalSpeaking) heard++
                                 if (event is CallEvent.AgentState) {
+                                    if (states.size < MAX_STATES) states += event.state
                                     if (!wasJoined) note("joined", sinceStart())
                                     if (event.state == "speaking" && !firstSpeech) {
                                         firstSpeech = true
@@ -147,6 +151,7 @@ class AssistantCall(
                             helpers.forEach { it.cancel() }
                         }
                     }
+                    listenedMs = nowMs() - connectedAt
                 }
             }
         } finally {
@@ -165,16 +170,21 @@ class AssistantCall(
                 note("acted", "failed: ${e.javaClass.simpleName}")
             }
         }
-        earcons.end()
+        // An idle ending on a microphone that gave only silence is a fault the driver must hear about.
+        val mic = if (roomUsed) room.micStats() else null
+        val deaf = reason == "idle" && mic?.deaf(listenedMs) == true
+        if (deaf) earcons.error() else earcons.end()
         val joinedAt = controller.joinedAtMs
         val month = UsageLedger.monthKey(nowMs(), ZoneId.systemDefault())
         val ledger = files.usage.load()
         val before = ledger.minutes(month)
         ledger.record(joinedAt, nowMs(), month)
         files.usage.save(ledger)
+        if (states.isNotEmpty()) note("states", states.joinToString(">"))
+        mic?.let { note("mic", it.render()) }
         note("end", "$reason minutes=${ledger.minutes(month) - before} heard=$heard")
         files.diag.save(log)
-        onUi(CallUi.Idle)
+        onUi(if (deaf) CallUi.Failed("ما وصلني صوت من الميكروفون. جرّب مرة ثانية، وإذا تكرر أعد تشغيل البوكس.") else CallUi.Idle)
         return reason
     }
 
@@ -196,5 +206,6 @@ class AssistantCall(
 
     private companion object {
         const val TICK_MS = 250L
+        const val MAX_STATES = 24
     }
 }

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import app.sanafi.assistant.call.CallGate
+import app.sanafi.assistant.data.DiagFile
 import app.sanafi.assistant.data.Prefs
 
 /**
@@ -24,7 +25,11 @@ class TriggerActivity : Activity() {
     private fun handlePress() {
         when {
             CallGate.live -> CallGate.end(this)
-            Prefs(this).isConfigured() -> CallGate.start(this)
+            Prefs(this).isConfigured() -> {
+                // The report then shows this call came from the steering button, and as which action.
+                DiagFile(this).let { file -> file.save(file.load().apply { add(System.currentTimeMillis(), "button", intent?.action ?: "unknown") }) }
+                CallGate.start(this)
+            }
             else -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         finish()

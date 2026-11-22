@@ -57,7 +57,7 @@ class CallService : Service() {
         scope.launch {
             var failed = false
             try {
-                failed = call.run { state.value = it }.startsWith("error:")
+                failed = call.run { state.value = it }.startsWith("error:") || state.value is CallUi.Failed
             } finally {
                 if (current === call) {
                     current = null

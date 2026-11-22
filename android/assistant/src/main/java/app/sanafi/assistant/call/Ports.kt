@@ -1,6 +1,7 @@
 package app.sanafi.assistant.call
 
 import app.sanafi.assistant.core.CallEvent
+import app.sanafi.assistant.core.MicStats
 import app.sanafi.assistant.data.DiagFile
 import app.sanafi.assistant.data.MemoryFile
 import app.sanafi.assistant.data.UsageFile
@@ -19,6 +20,9 @@ interface RoomPort {
 
     /** Disconnects and releases; safe to call more than once. */
     fun close()
+
+    /** What the microphone gave this call, still readable after [close]; null when it was not measured. */
+    fun micStats(): MicStats?
 }
 
 /** Pauses whatever is playing for the length of the call and gives it back afterwards. */

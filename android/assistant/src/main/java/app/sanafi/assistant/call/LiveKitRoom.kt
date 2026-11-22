@@ -4,13 +4,20 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import app.sanafi.assistant.core.CallEvent
+import app.sanafi.assistant.core.MicMeter
+import app.sanafi.assistant.core.MicStats
 import io.livekit.android.AudioOptions
 import io.livekit.android.AudioType
 import io.livekit.android.LiveKit
 import io.livekit.android.LiveKitOverrides
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
+import io.livekit.android.room.track.LocalAudioTrack
+import io.livekit.android.room.track.Track
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +28,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import livekit.org.webrtc.AudioTrackSink
 
 /** The real call room: HUMAIN Voice Agent calls run on LiveKit. */
 class LiveKitRoom(context: Context, mediaAudio: Boolean) : RoomPort {
@@ -29,6 +37,34 @@ class LiveKitRoom(context: Context, mediaAudio: Boolean) : RoomPort {
         context.applicationContext,
         overrides = if (mediaAudio) LiveKitOverrides(audioOptions = AudioOptions(audioOutputType = AudioType.MediaAudioType())) else LiveKitOverrides(),
     )
+
+    private val audio = context.applicationContext.getSystemService(AudioManager::class.java)
+    private val meter = MicMeter()
+    private val recorderSources = LinkedHashSet<Int>()
+
+    @Volatile
+    private var published = false
+
+    @Volatile
+    private var silenced = 0
+
+    // The call library hands over each captured buffer: 16-bit samples, low byte first.
+    private val micSink = AudioTrackSink { data, bitsPerSample, _, _, _, _ ->
+        if (bitsPerSample == 16) meter.add((data.duplicate().rewind() as ByteBuffer).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer())
+    }
+
+    override fun micStats(): MicStats = MicStats(published, meter.frames, meter.peakDbfs, synchronized(recorderSources) { recorderSources.toList() }, silenced)
+
+    /** Notes who is recording on the box right now, and whether Android is muting any of them. */
+    private fun sampleRecorders() {
+        try {
+            val configs = audio.activeRecordingConfigurations
+            synchronized(recorderSources) { configs.forEach { recorderSources += it.clientAudioSource } }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) configs.count { it.isClientSilenced }.let { if (it > silenced) silenced = it }
+        } catch (_: Exception) {
+            // Only for the report.
+        }
+    }
 
     override suspend fun warmUp(url: String) {
         try {
@@ -45,6 +81,13 @@ class LiveKitRoom(context: Context, mediaAudio: Boolean) : RoomPort {
             room.localParticipant.registerRpcMethod("client_tool_call") { data -> onTool(data.payload) }
             room.connect(url, token)
             room.localParticipant.setMicrophoneEnabled(true)
+            try {
+                val track = room.localParticipant.getTrackPublication(Track.Source.MICROPHONE)?.track as? LocalAudioTrack
+                published = track != null
+                track?.addSink(micSink)
+            } catch (_: Exception) {
+                // The meter is only for the report; the call goes on without it.
+            }
         }
     }
 
@@ -62,7 +105,9 @@ class LiveKitRoom(context: Context, mediaAudio: Boolean) : RoomPort {
         }
         // The agent publishes what it is doing as a participant attribute; polling it is what worked on the box.
         var last: String? = null
+        var polls = 0
         while (isActive) {
+            if (polls++ % RECORDERS_EVERY == 0) sampleRecorders()
             val state = room.remoteParticipants.values.firstNotNullOfOrNull { it.attributes["lk.agent.state"] }
             if (state != null && state != last) {
                 last = state
@@ -86,6 +131,7 @@ class LiveKitRoom(context: Context, mediaAudio: Boolean) : RoomPort {
 
     private companion object {
         const val POLL_MS = 50L
+        const val RECORDERS_EVERY = 20
     }
 }
 
